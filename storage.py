@@ -125,16 +125,16 @@ class PredictsStorage:
     def put_model_info(self, model_info: ModelInfo):
         try:
             cur = self.__conn.cursor()
-            cur.execute("""UPDATE model_info SET current = %s""", False)
+            cur.execute("""update model_info set current = %s""", False)
 
             query = """
-                INSERT INTO model_info (
+                insert into model_info (
                     model_id,
                     current,
                     accuracy,
                     created_at,
                 )
-                VALUES (%s, %s, %s, %s, %s, %s)
+                values (%s, %s, %s, %s, %s, %s)
             """
             model_info.current = True
             args = [
@@ -152,7 +152,7 @@ class PredictsStorage:
 
     def put_predicts(self, predicts: list[Predict]):
         query = """
-            INSERT INTO predict (
+            insert into predict (
                 predict_id,
                 ticker_id,
                 model_id,
@@ -160,7 +160,7 @@ class PredictsStorage:
                 predicted_movement,
                 predict_created_at
             ) 
-            VALUES
+            values
         """
         args = []
 
