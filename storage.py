@@ -1,7 +1,9 @@
 import os
 import datetime
 
-import psycopg2 as pg
+import psycopg2
+from psycopg2.extensions import connection
+
 from dotenv import load_dotenv
 from loguru import logger as log
 
@@ -35,7 +37,7 @@ class Predict:
     ticker_id: str
     model_id: str
     date_predict: datetime
-    predicted_movement: float
+    predicted_movement: int
     predict_created_at: datetime
 
     def __init__(
@@ -44,7 +46,7 @@ class Predict:
             ticker_id: str,
             model_id: str,
             date_predict: datetime,
-            predicted_movement: float,
+            predicted_movement: int,
             predict_created_at: datetime,
     ):
         self.predict_id = predict_id
@@ -74,7 +76,7 @@ class Config:
 
         for field in [dbname, user, password, host, port]:
             if field in [None, ""]:
-                raise Exception(f"{field} not found in config {config_path}")
+                raise Exception(f"some required fields not found in config {config_path}")
 
         self.dbname = dbname
         self.user = user
@@ -88,13 +90,13 @@ class Config:
 
 
 class PredictsStorage:
-    __conn: pg.connection
+    __conn: connection
 
     def __init__(self, config: Config):
         if not config.loaded():
             raise Exception("storage config has not loaded")
 
-        __conn = pg.connect(
+        self.__conn = psycopg2.connect(
             dbname=config.dbname,
             user=config.user,
             password=config.password,
@@ -109,7 +111,7 @@ class PredictsStorage:
     def __ping(self):
         try:
             cur = self.__conn.cursor()
-            cur.execute("SELECT")
+            cur.execute("SELECT 1")
 
             single_row = 1
             if len(cur.fetchone()) != single_row:
@@ -125,16 +127,16 @@ class PredictsStorage:
     def put_model_info(self, model_info: ModelInfo):
         try:
             cur = self.__conn.cursor()
-            cur.execute("""update model_info set current = %s""", False)
+            cur.execute("""update model_info set current = %s""", [False])
 
             query = """
                 insert into model_info (
                     model_id,
                     current,
                     accuracy,
-                    created_at,
+                    created_at
                 )
-                values (%s, %s, %s, %s, %s, %s)
+                values (%s, %s, %s, %s)
             """
             model_info.current = True
             args = [
@@ -152,7 +154,7 @@ class PredictsStorage:
 
     def put_predicts(self, predicts: list[Predict]):
         query = """
-            insert into predict (
+            insert into stock_predict (
                 predict_id,
                 ticker_id,
                 model_id,
@@ -174,7 +176,7 @@ class PredictsStorage:
                 predict.predicted_movement,
                 predict.predict_created_at,
             ])
-        query = query.rstrip(',')
+        query = query.rstrip(", ")
 
         try:
             cur = self.__conn.cursor()

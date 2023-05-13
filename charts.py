@@ -81,7 +81,6 @@ class ChartsBuilder:
 
         if prefix:
             chart_name = f"charts/{chart_name}"
-
         if extension:
             chart_name = f"{chart_name}.html"
 

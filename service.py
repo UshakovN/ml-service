@@ -50,7 +50,7 @@ class Service:
 
         for field in [api_token_stocks, api_route_stocks, api_route_auth, service_hash_salt]:
             if field in [None, ""]:
-                raise Exception(f"{field} not found in config {config_path}")
+                raise Exception(f"some required fields not found in config {config_path}")
 
         self.__api_token_stocks = api_token_stocks
         self.__api_route_stocks = api_route_stocks
@@ -96,7 +96,7 @@ class Service:
         self.__price_movement_predictor.update_stored_predicts(df)
         log.info("price movement predictor update stored predicts")
 
-    def update_stocks_cache(self):
+    def update_service_components(self):
         self.__update_service_components()
         log.info("first update service components success")
 
@@ -108,7 +108,7 @@ class Service:
             except Exception as ex:
                 log.error(f"update service components failed: {ex}")
 
-        schedule.every(_CACHE_UPDATE_HOURS).minute.do(update)  # TODO: change to hours
+        schedule.every(_CACHE_UPDATE_HOURS).hours.do(update)  # TODO: test this
 
         def scheduler():
             wait_seconds = _CACHE_UPDATE_HOURS * 24 * 60
@@ -117,7 +117,7 @@ class Service:
             while True:
                 schedule.run_pending()
 
-        log.info("run scheduled stocks cache update")
+        log.info("run scheduled update service components")
         th = Thread(target=scheduler, args=())
         th.start()
 

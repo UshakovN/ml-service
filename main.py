@@ -39,9 +39,9 @@ def prepare_static_serve():
 def prepare_service():
     charts_service.load_config(CONFIG_PATH)
     try:
-        charts_service.update_stocks_cache()
+        charts_service.update_service_components()
     except Exception as ex:
-        raise Exception(f"update stocks cache failed: {ex}")
+        raise Exception(f"update service components failed: {ex}")
 
 
 async def shutdown_service():
@@ -60,17 +60,33 @@ async def startup_service():
         return
 
 
-app = FastAPI(title="Chart service")
+app = FastAPI(
+    title="Machine Learning service API",
+    version="1.0.0",
+    description="API for machine learning and charts service",
+    docs_url='/swagger',
+)
+
 app.mount("/charts", StaticFiles(directory="charts"), name="charts")
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    summary="Health check method",
+    description="Health method check http server health",
+    tags=["Health"],
+)
 async def health() -> contract.HealthResponse:
     await asyncio.sleep(0)
     return contract.HealthResponse(success=True)
 
 
-@app.post("/chart/{ticker_id}")
+@app.post(
+    "/chart/{ticker_id}",
+    summary="Chart method create dynamic chart for ticker stocks",
+    description="Chart method create dynamic chart for ticker stocks prices for the specified period",
+    tags=["Misc"],
+)
 async def create_chart(ticker_id: str, req: contract.ChartRequest) -> contract.ChartResponse:
     if ticker_id == "":
         raise HTTPException(
@@ -92,9 +108,8 @@ async def create_chart(ticker_id: str, req: contract.ChartRequest) -> contract.C
     )
 
 
-public_routes = [
-    "/health",
-    "/charts/"
+auth_routes = [
+    "/chart/"
 ]
 
 
@@ -102,7 +117,7 @@ public_routes = [
 async def auth_middleware(req: Request, call_next):
     req_route = req.url.path
 
-    if True in map(lambda public_route: req_route.startswith(public_route), public_routes):
+    if all([not req_route.startswith(route) for route in auth_routes]):
         return await call_next(req)
 
     check_success: bool = False

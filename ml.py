@@ -49,6 +49,9 @@ class PriceMovementPredictor:
                 'stocked_time',
             ],
         )
+        # smooth stocks price fields
+        self.__exponential_smooth_stocks()
+
         # calculate price diff for each period
         self.__fixed_df['price_change'] = self.__fixed_df['close_price'].diff()
 
@@ -75,10 +78,13 @@ class PriceMovementPredictor:
         smoothed_df = pd.concat([
             self.__fixed_df[['ticker_id', 'stocked_time']],
             smoothed_df,
-        ])
+        ],
+            axis=1,
+            sort=False,
+        )
         self.__fixed_df = smoothed_df
 
-    def __fill_rsi_indicator(self, period: int = 30):
+    def __fill_rsi_indicator(self, period: int = 27):
         sample_df = self.__fixed_df[['ticker_id', 'price_change']].copy()
 
         up_df = sample_df.copy()
@@ -86,6 +92,7 @@ class PriceMovementPredictor:
 
         down_df = sample_df.copy()
         down_df.loc['price_change'] = down_df.loc[(down_df['price_change'] > 0), 'price_change'] = 0
+
         down_df['price_change'] = down_df['price_change'].abs()
 
         def form_moving_window(df: pd.DataFrame):
@@ -101,7 +108,7 @@ class PriceMovementPredictor:
 
         self.__fixed_df['rsi_indicator'] = relative_strength_index
 
-    def __calculate_min_for_lowest(self, period: int = 30) -> pd.DataFrame:
+    def __calculate_min_for_lowest(self, period: int = 14) -> pd.DataFrame:
         lowest_df = self.__fixed_df[['ticker_id', 'lowest_price']].copy()
 
         min_for_lowest = lowest_df.groupby('ticker_id')['lowest_price'].transform(
@@ -109,7 +116,7 @@ class PriceMovementPredictor:
         )
         return min_for_lowest
 
-    def __calculate_max_for_highest(self,  period: int = 30) -> pd.DataFrame:
+    def __calculate_max_for_highest(self,  period: int = 14) -> pd.DataFrame:
         highest_df = self.__fixed_df[['ticker_id', 'highest_price']].copy()
 
         max_for_highest = highest_df.groupby('ticker_id')['highest_price'].transform(
@@ -117,7 +124,7 @@ class PriceMovementPredictor:
         )
         return max_for_highest
 
-    def __fill_stochastic_indicator(self, period: int = 30):
+    def __fill_stochastic_indicator(self, period: int = 14):
         lowest_df = self.__calculate_min_for_lowest(period)
         highest_df = self.__calculate_max_for_highest(period)
 
@@ -126,7 +133,7 @@ class PriceMovementPredictor:
 
         self.__fixed_df['stochastic_indicator'] = stochastic
 
-    def __fill_williams_percent_range_indicator(self, period: int = 30):
+    def __fill_williams_percent_range_indicator(self, period: int = 14):
         lowest_df = self.__calculate_min_for_lowest(period)
         highest_df = self.__calculate_max_for_highest(period)
 
@@ -135,7 +142,7 @@ class PriceMovementPredictor:
 
         self.__fixed_df['williams_indicator'] = williams_pr
 
-    def __fill_roc_indicator(self, period: int = 30):
+    def __fill_roc_indicator(self, period: int = 21):
         roc = self.__fixed_df.groupby('ticker_id')['close_price'].transform(
             lambda x: x.pct_change(periods=period)
         )
@@ -150,8 +157,8 @@ class PriceMovementPredictor:
         ema_26 = form_ema(self.__fixed_df, period=26)
         ema_12 = form_ema(self.__fixed_df, period=12)
 
-        macd = ema_12 - ema_26
-        signal_line = form_ema(macd, period=9)
+        macd: pd.DataFrame = ema_12 - ema_26
+        signal_line = macd.ewm(span=9).mean()
 
         self.__fixed_df['macd_indicator'] = macd
         self.__fixed_df['sl_indicator'] = signal_line
@@ -167,33 +174,28 @@ class PriceMovementPredictor:
         self.__fixed_df.loc[self.__fixed_df['prediction'] == 0.0] = 1.0
 
     def __sanitize_stocks(self):
-        self.__fixed_df.dropna()
+        self.__fixed_df = self.__fixed_df.dropna()
 
     def __build_stocks_dataset(self) -> pd.DataFrame:
         self.__normalize_stocks()
-        self.__exponential_smooth_stocks()
 
-        self.__fill_rsi_indicator()
-        self.__fill_stochastic_indicator()
-        self.__fill_williams_percent_range_indicator()
-        self.__fill_roc_indicator()
+        self.__fill_rsi_indicator(period=27)
+        self.__fill_stochastic_indicator(period=14)
+        self.__fill_williams_percent_range_indicator(period=14)
+        self.__fill_roc_indicator(period=21)
         self.__fill_macd_sl_indicator()
         self.__fill_classification_factor()
 
         self.__sanitize_stocks()
 
-        dataset = self.__fixed_df
-        self.__fixed_df = pd.DataFrame(None)
+        return self.__fixed_df
 
-        return dataset
-
-    def __build_past_date_data(self) -> pd.DataFrame:
-        past_date = tools.get_utc_time().now() - datetime.timedelta(days=1)
+    def __build_past_date_data(self, days_delta: int = 1) -> pd.DataFrame:
+        past_date = tools.get_utc_time().now() - datetime.timedelta(days=days_delta)
         past_date_format = past_date.strftime(_DATE_FORMAT)
 
-        dataset = self.__build_stocks_dataset()
+        dataset = self.__fixed_df
         past_date_data = dataset.query(f"stocked_time == '{past_date_format}'")
-        past_date_data = PriceMovementPredictor.__fiter_dataset_indicators(past_date_data)
 
         return past_date_data
 
@@ -271,8 +273,14 @@ class PriceMovementPredictor:
         log.info("random forest classifier model build and fit success")
 
     def __build_price_movement_predict(self):
-        past_date_data = self.__build_past_date_data()
-        today_price_movement_predictions = self.__rfc.predict(past_date_data)
+        past_date_data = self.__build_past_date_data(days_delta=100)  # TODO: change to 1 day
+
+        if past_date_data.empty:
+            log.warning("past date data not found for build price movement predict")
+            return
+
+        past_date_indicators = PriceMovementPredictor.__fiter_dataset_indicators(past_date_data)
+        today_price_movement_predictions = self.__rfc.predict(past_date_indicators)
 
         ticker_ids = past_date_data['ticker_id'].to_list()
 
@@ -284,7 +292,8 @@ class PriceMovementPredictor:
                 f"ticker_id count: {ticker_ids_count} not match to "
                 f"price movement predictions count: {predictions_count}",
             )
-        if today_price_movement_predictions not in [0, 1]:
+
+        if any([predict not in [-1, 1] for predict in today_price_movement_predictions]):
             raise Exception("non binary values encountered in model predictions")
 
         today_date = tools.get_utc_time().date()
@@ -296,7 +305,7 @@ class PriceMovementPredictor:
                 ticker_id=ticker_ids[idx],
                 model_id=self.__rfc_id,
                 date_predict=today_date,
-                predicted_movement=today_price_movement_predictions[idx],
+                predicted_movement=int(today_price_movement_predictions[idx]),
                 predict_created_at=tools.get_utc_time(),
             )
             predicts.append(predict)
@@ -305,6 +314,9 @@ class PriceMovementPredictor:
             self.__storage.put_predicts(predicts)
         except Exception as ex:
             raise Exception(f"cannot put model price movement predicts to storage: {str(ex)}")
+
+    def __cleanup_dataset(self):
+        self.__fixed_df = pd.DataFrame(None)
 
     def update_stored_predicts(self, df: pd.DataFrame):
         self.__fixed_df = df
@@ -316,5 +328,8 @@ class PriceMovementPredictor:
             self.__build_price_movement_predict()
         except Exception as ex:
             raise Exception(f"cannot build price movement predict: {str(ex)}")
+
+        self.__cleanup_dataset()
+        log.info("cleanup dataset for reduce memory usage")
 
 
