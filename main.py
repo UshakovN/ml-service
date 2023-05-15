@@ -1,13 +1,14 @@
 import argparse
 import asyncio
 import http
+from typing import Annotated, Union
 
 import service
 import contract
 import uvicorn
 
 from loguru import logger as log
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
@@ -87,7 +88,11 @@ async def health() -> contract.HealthResponse:
     description="Chart method create dynamic chart for ticker stocks prices for the specified period",
     tags=["Misc"],
 )
-async def create_chart(ticker_id: str, req: contract.ChartRequest) -> contract.ChartResponse:
+async def create_chart(
+        ticker_id: str,
+        req: contract.ChartRequest,
+        x_auth_token: Annotated[Union[str, None], Header()] = None,
+) -> contract.ChartResponse:
     if ticker_id == "":
         raise HTTPException(
             status_code=http.HTTPStatus.BAD_REQUEST,
@@ -98,6 +103,7 @@ async def create_chart(ticker_id: str, req: contract.ChartRequest) -> contract.C
             status_code=http.HTTPStatus.BAD_REQUEST,
             detail="request body not found",
         )
+    log.info(f"used auth token: {x_auth_token}")
 
     chart_path = charts_service.create_chart(ticker_id, req.from_date, req.to_date, req.indicators, req.force_refresh)
     formed_chart_url = f"http://{HOST}:{PORT}/{chart_path}"
@@ -166,4 +172,4 @@ async def add_shutdown():
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="localhost", port=8085, reload=True)

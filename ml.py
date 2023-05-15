@@ -43,11 +43,12 @@ class PriceMovementPredictor:
         self.__fixed_df['stocked_time'] = self.__fixed_df['stocked_time'].dt.strftime(_DATE_FORMAT)
 
         # sort stocks dataframe
-        self.__fixed_df = self.__fixed_df.sort_values(
+        self.__fixed_df.sort_values(
             by=[
                 'ticker_id',
                 'stocked_time',
             ],
+            inplace=True,
         )
         # smooth stocks price fields
         self.__exponential_smooth_stocks()
@@ -165,8 +166,8 @@ class PriceMovementPredictor:
 
     def __fill_classification_factor(self):
         close_df = self.__fixed_df.groupby('ticker_id')['close_price'].transform(
-            # shift to day before price for correct predict column
-            lambda x: np.sign(x.diff()).shift(-1)
+            # shift for correct predict column
+            lambda x: np.sign(x.diff()).shift(1)
         )
         self.__fixed_df['prediction'] = close_df
 
@@ -273,7 +274,15 @@ class PriceMovementPredictor:
         log.info("random forest classifier model build and fit success")
 
     def __build_price_movement_predict(self):
-        past_date_data = self.__build_past_date_data(days_delta=100)  # TODO: change to 1 day
+        monday_weekday: int = 0
+        today_date = tools.get_utc_time().date()
+
+        if today_date.weekday() != monday_weekday:
+            days_backoff = 1
+        else:
+            days_backoff = 3
+
+        past_date_data = self.__build_past_date_data(days_delta=days_backoff)
 
         if past_date_data.empty:
             log.warning("past date data not found for build price movement predict")

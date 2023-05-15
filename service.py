@@ -14,8 +14,6 @@ from loguru import logger as log
 from threading import Thread
 
 
-_CACHE_UPDATE_HOURS = 1
-
 _API_TOKEN_HEADER = 'X-Service-Token'
 _AUTH_TOKEN_HEADER = 'X-Auth-Token'
 
@@ -69,6 +67,9 @@ class Service:
             if resp.status_code in [http.HTTPStatus.FORBIDDEN, http.HTTPStatus.UNAUTHORIZED]:
                 raise Exception(f"config api token malformed or expired. specified header: {_API_TOKEN_HEADER}")
 
+            if resp.status_code == http.HTTPStatus.NOT_FOUND:
+                raise Exception(f"malformed request api route: {self.__api_route_stocks}")
+
             if resp.status_code >= http.HTTPStatus.INTERNAL_SERVER_ERROR:
                 log.warning(f"cannot get stocks from {self.__api_route_stocks}. got status code: {resp.status_code}")
                 reties -= 1
@@ -90,10 +91,10 @@ class Service:
         df = self.__load_stocks_dataframe()
         log.info("service loaded stocks dataframe")
 
-        self.__charts_builder.set_dataframe(df)
+        self.__charts_builder.set_dataframe(df.copy())
         log.info("charts builder set loaded dataframe")
 
-        self.__price_movement_predictor.update_stored_predicts(df)
+        self.__price_movement_predictor.update_stored_predicts(df.copy())
         log.info("price movement predictor update stored predicts")
 
     def update_service_components(self):
@@ -108,10 +109,11 @@ class Service:
             except Exception as ex:
                 log.error(f"update service components failed: {ex}")
 
-        schedule.every(_CACHE_UPDATE_HOURS).hours.do(update)  # TODO: test this
+        schedule.every().day.at("00:00").hours.do(update)
 
         def scheduler():
-            wait_seconds = _CACHE_UPDATE_HOURS * 24 * 60
+            wait_one_day = 1
+            wait_seconds = wait_one_day * 24 * 60
             time.sleep(wait_seconds)
 
             while True:
