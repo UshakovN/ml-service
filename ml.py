@@ -219,7 +219,7 @@ class PriceMovementPredictor:
         x_train, x_test, y_train, y_test = train_test_split(
             x_samples,
             y_samples,
-            random_state=0,
+            random_state=1,
             shuffle=False,
             stratify=None,
         )
@@ -228,10 +228,10 @@ class PriceMovementPredictor:
     def __build_classifier(self):
         try:
             rfc = RandomForestClassifier(
-                n_estimators=100,
-                oob_score=True,
                 criterion="gini",
-                random_state=0,
+                n_estimators=100,
+                random_state=1,
+                oob_score=True,
             )
             log.info("random forest classifier model create")
 

@@ -86,7 +86,13 @@ class ChartsBuilder:
 
         return chart_name
 
-    def __create_chart(self, ticker_id: str, from_date: datetime, to_date: datetime, indicators: bool) -> str:
+    def __create_chart(
+            self,
+            ticker_id: str,
+            from_date: datetime,
+            to_date: datetime,
+            indicators: bool,
+    ) -> str:
         not_specified = ["", None]
 
         if ticker_id in not_specified:
